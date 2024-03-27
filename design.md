@@ -102,3 +102,12 @@
         GOOGLE_API_KEY=your_google_api_key_here
 
 - Ensure the `.env` file is included in the `.gitignore` file to prevent sensitive information from being committed to version control
+
+
+## Model Versions
+1. models/gemini-1.0-pro
+2. models/gemini-1.0-pro-001
+3. models/gemini-1.0-pro-latest
+4. models/gemini-1.0-pro-vision-latest
+5. models/gemini-pro
+6. models/gemini-pro-vision

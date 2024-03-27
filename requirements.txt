@@ -1,0 +1,6 @@
+fastapi[all]
+opencv-python
+pillow
+google-generativeai
+dotenv
+python-multipart
