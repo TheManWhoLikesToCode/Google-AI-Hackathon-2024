@@ -10,30 +10,45 @@
    - Users will interact with the application using voice commands.
 
 3. User Flow
-   - User activates the application using a voice command.
-   - Application prompts the user to select a mode (Reading Mode or Magnifying Glass).
-   - User speaks the desired mode.
-   - Application captures an image from the connected camera.
-   - Image is sent to the FastAPI server for processing.
-   - FastAPI server sends the image to the Google Vision API for analysis.
-   - API response is processed and the relevant information is returned to the user through speech output.
+   - User activates the app by voice command.
+   - AI assistant greets the user and asks how it can help.
+   - User speaks a command or asks a question.
+   - AI assistant processes the request and takes appropriate action.
+   - If image analysis is needed:
+    - AI assistant captures an image from the camera.
+    - Image is sent to FastAPI server for processing.
+    - FastAPI server sends the image to Google Vision API for analysis.
+    - API response is processed and returned to the AI assistant.
+   - AI assistant provides the requested information or performs the action through speech output.
+   - AI assistant asks if there's anything else it can assist with.
+   - If user has another request, the process repeats from step 3.
+   - If not, AI assistant thanks the user and deactivates the app.
 
-4. Technology Stack
+   AI Assistant Functions:
+   - `read_text()`: Reads text in the captured image.
+   - `describe_image()`: Describes objects, scenes, or activities in the image.
+   - `magnify()`: Activates magnifying glass to zoom in on an area.
+   - `help()`: Provides information about available commands and functions.
+   - `exit()`: Deactivates the application.
+
+   User invokes functions by speaking the command or asking a related question. AI assistant interprets the intent and executes the appropriate function.
+
+1. Technology Stack
    - FastAPI: Web framework for building the API endpoints and server-side logic.
    - Google Vision API: Cloud-based service for image analysis and object detection.
    - SpeechRecognition: Library for voice command recognition.
    - Camera Integration: Capture images from a connected camera (webcam or Raspberry Pi camera module).
    - Text-to-Speech: Convert the processed information into speech output for the user.
 
-5. Security Considerations
+2. Security Considerations
    - Store Google Vision API credentials using a `.env` file.
 
-6. Error Handling and Resilience
+3. Error Handling and Resilience
    - Implement robust error handling for voice commands, image capture, and API requests.
    - Provide clear error messages and guidance to users through speech output.
    - Ensure the application gracefully handles network disruptions and API failures.
 
-7. Accessibility
+4. Accessibility
    - Follow accessibility guidelines and best practices for voice interactions and audio output.
    - Conduct user testing with visually impaired individuals to gather feedback and improve usability.
 
@@ -102,3 +117,12 @@
         GOOGLE_API_KEY=your_google_api_key_here
 
 - Ensure the `.env` file is included in the `.gitignore` file to prevent sensitive information from being committed to version control
+
+
+## Model Versions
+1. models/gemini-1.0-pro
+2. models/gemini-1.0-pro-001
+3. models/gemini-1.0-pro-latest
+4. models/gemini-1.0-pro-vision-latest
+5. models/gemini-pro
+6. models/gemini-pro-vision
