@@ -6,6 +6,8 @@ Description: Client
 """
 
 import os
+import tempfile
+from io import BytesIO
 import speech_recognition as sr
 from gtts import gTTS
 from dotenv import load_dotenv
@@ -29,10 +31,18 @@ def speak(text):
         None
     """
     tts = gTTS(text=text, lang="en")
-    tts.save("output.mp3")
+    # Create a BytesIO object to store the audio data in memory
+    audio_data = BytesIO()
+    tts.write_to_fp(audio_data)
+    audio_data.seek(0)
+    # Create a temporary file and write the audio data to it
+    with tempfile.NamedTemporaryFile(delete=False) as temp_audio:
+        temp_audio.write(audio_data.read())
+        temp_audio_path = temp_audio.name
     # Use 'afplay' for macOS, 'mpg321' for Linux, or 'start' for Windows
-    os.system("afplay output.mp3")
-    os.remove("output.mp3")
+    os.system(f"afplay {temp_audio_path}")
+    # Remove the temporary audio file
+    os.remove(temp_audio_path)
 
 
 def listen():
@@ -48,16 +58,20 @@ def listen():
     """
     recognizer = sr.Recognizer()
     recognizer.energy_threshold = 300  # Adjust the value as needed
-    recognizer.pause_threshold = 1.0  # Adjust the value as needed
+    recognizer.pause_threshold = 0.65  # Adjust the value as needed
     recognizer.dynamic_energy_threshold = True
 
     with sr.Microphone() as source:
+        print("Adjusting for ambient noise...")
+        recognizer.adjust_for_ambient_noise(source, duration=0.5)
         print("Listening...")
         audio = recognizer.listen(source)
 
     try:
         print("Recognizing...")
-        text = recognizer.recognize_google(audio)
+        text = recognizer.recognize_google(
+            audio, language="en-US"
+        )  # Specify the language
         return text
     except sr.UnknownValueError as e:
         print(f"UnknownValueError: {str(e)}")

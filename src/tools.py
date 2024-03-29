@@ -46,6 +46,6 @@ def read():
     text = reader.readtext(frame)
 
     # Extract the text from the result with confidence threshold over 75
-    text = [result[1] for result in text if result[2] > 0.75]
+    text = [result[1] for result in text if result[2] > 0.50]
 
     return text
