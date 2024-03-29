@@ -6,15 +6,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+reader = easyocr.Reader(["ch_sim", "en"])
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
-
 def read():
+    """
+    Reads text from the user's webcam.
+
+    This function captures an image from the user's webcam, performs text extraction on the captured image,
+    and returns the extracted text.
+
+    Returns:
+        list: A list of strings containing the extracted text.
+
+    Raises:
+        RuntimeError: If the webcam fails to open or if the image capture fails.
+    """
     start_time = time.time()  # Start time of the whole function
 
     section_times = []  # List to store times of each section
-
-    reader = easyocr.Reader(["ch_sim", "en"])
 
     section_times.append(time.time())  # Mark end of initialization
 
@@ -24,7 +34,7 @@ def read():
     camera_warmup_start = time.time()  # Start time for camera warm-up
 
     # Wait for the camera to warm up
-    for _ in range(5):
+    for _ in range(3):
         cap.read()
 
     section_times.append(time.time())  # Mark end of camera warm-up
@@ -64,5 +74,3 @@ def read():
         prev_time = section_time
 
     return text
-
-print(read())
