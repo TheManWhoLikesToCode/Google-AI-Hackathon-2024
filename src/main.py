@@ -77,22 +77,24 @@ async def conversation(prompt: str = Form(...), auth_token: str = Header(...), m
 
     # Print specific parts of the response
     print("\nResponse parts:")
-    for i, part in enumerate(response.parts, start=1):
+    for i, part in enumerate(response.candidates[0].content.parts, start=1):
         print(f"Part {i}:")
         pprint(part)
         print()  # Empty line for separation
 
+        if hasattr(part, "function_call"):
+            function_call = part.function_call
+            print("Function call details:")
+            pprint(function_call)
 
-    if hasattr(response.candidates[0].content.parts[0], "function_call"):
-        function_call = response.candidates[0].content.parts[0].function_call
-        print("Function call details:")
-        pprint(function_call)
+            function_name = function_call.name
+            if function_name == "reading_mode" or function_name == "magnifying_mode":
+                return {"message": "Please upload an image for " + function_name}
 
-        function_name = function_call.name
-        if function_name == "reading_mode" or function_name == "magnifying_mode":
-            return {"message": "Please upload an image for " + function_name}
+    if hasattr(response.candidates[0].content.parts[-1], "text"):
+        return {"response": response.candidates[0].content.parts[-1].text.strip()}
     else:
-        return {"response": response.candidates[0].content.parts[0].text.strip()}
+        return {"error": "No text response found"}
 
 
 @app.post("/capture_image")
