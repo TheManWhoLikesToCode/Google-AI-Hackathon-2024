@@ -4,17 +4,28 @@ import cv2
 import easyocr
 from dotenv import load_dotenv
 
+from tqdm import tqdm
+import shutil
+import google.generativeai as genai
 from imagehash import phash
 from PIL import Image
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+from config import generation_config, safety_settings
+from pathlib import Path
 
 load_dotenv()
 
 reader = easyocr.Reader(["ch_sim", "en"])
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
-# Changes to me made using vidgear library we want to stablize the videofeed to help in text extraction to do this we must first change the
+genai.configure(api_key=GOOGLE_API_KEY)
+
+# Load Model
+model = genai.GenerativeModel(
+    model_name="gemini-pro-vision",
+    generation_config=generation_config,
+    safety_settings=safety_settings,
+)
 
 
 def read():
@@ -105,7 +116,7 @@ def see():
 
     selected_frames = []
     previous_hashes = []
-    hash_threshold = 5  # Adjust this threshold as needed
+    hash_threshold = 10  # Adjust this threshold as needed
 
     for frame_idx in tqdm(range(n_frames), desc="Processing Frames"):
         ret, img = cap.read()
@@ -137,15 +148,29 @@ def see():
 
     print(f"Total key frames based on the threshold chosen: {len(selected_frames)}")
 
-    # Selected frames display
-    fig, axs = plt.subplots(1, len(selected_frames), figsize=(30, 10))
-    for i, frame in enumerate(selected_frames):
-        axs[i].imshow(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        axs[i].set_title(f"Selected Frame {i}")
-        axs[i].axis("off")
-    plt.show()
+    image_parts = []
+    for i in os.listdir("selected_frames"):
+        image_path = os.path.join("selected_frames", i)
+        image_data = Path(image_path).read_bytes()
+        image_part = {"mime_type": "image/png", "data": image_data}
+        image_parts.append(image_part)
 
-    return selected_frames
+    prompt_parts = [
+        "Instructions: Consider the following images and provide a summary of what is shown across all the images.",
+        "Summary:",
+    ]
+    prompt_parts.extend(image_parts)
+    prompt_parts.append("Description:")
+
+    try:
+        response = model.generate_content(prompt_parts)
+    except ValueError as e:
+        print("Error occurred while generating content:")
+        print(str(e))
+        response = None
+
+    shutil.rmtree(output_directory)
+    return response.text
 
 
 if __name__ == "__main__":

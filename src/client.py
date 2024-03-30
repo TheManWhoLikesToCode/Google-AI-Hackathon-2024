@@ -12,7 +12,7 @@ import speech_recognition as sr
 from gtts import gTTS
 from dotenv import load_dotenv
 import google.generativeai as genai
-from tools import read
+from tools import read, see
 from config import generation_config, safety_settings
 
 load_dotenv()
@@ -97,7 +97,7 @@ def main():
         model_name="gemini-pro",
         generation_config=generation_config,
         safety_settings=safety_settings,
-        tools=[read],
+        tools=[read, see],
     )
     chat = model.start_chat(enable_automatic_function_calling=True)
 
