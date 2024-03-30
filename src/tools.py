@@ -86,8 +86,7 @@ def read():
 
 def see():
     """
-    Capture 30 frames from the webcam and save them as an MP4 video.
-    Select distinct frames based on perceptual hash similarity.
+    Capture frames from the webcam in real-time and select distinct frames based on perceptual hash similarity.
     """
     start_time = time.time()
     output_directory = "selected_frames"
@@ -103,29 +102,6 @@ def see():
     frame_rate = cap.get(cv2.CAP_PROP_FPS)
     frame_width = int(cap.get(3))
     frame_height = int(cap.get(4))
-    size = (frame_width, frame_height)
-
-    # Create a VideoWriter object to save the frames as an MP4 video
-    out = cv2.VideoWriter(
-        "output.mp4", cv2.VideoWriter_fourcc(*"mp4v"), frame_rate, size
-    )
-
-    for i in range(n_frames):
-        ret, frame = cap.read()
-        if not ret:
-            break
-        # Write the frame to the output video
-        out.write(frame)
-        # Save the frame as an image in the output directory
-        cv2.imwrite(os.path.join(output_directory, f"frame_{i}.jpg"), frame)
-
-    cap.release()
-    out.release()
-
-    cap = cv2.VideoCapture("output.mp4")
-    end_time = time.time()
-    execution_time = end_time - start_time
-    print(f"Video Capture: {execution_time:.2f} seconds")
 
     selected_frames = []
     previous_hashes = []
@@ -145,6 +121,7 @@ def see():
         ):
             selected_frames.append(img)
             previous_hashes.append(current_hash)
+
             # Saving the selected frame to the output directory
             frame_filename = os.path.join(
                 output_directory, f"frame_{frame_idx:04d}.png"
@@ -154,7 +131,10 @@ def see():
     # Releasing the video capture object to free the space captured
     cap.release()
 
-    """     
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print(f"Real-time Frame Capture: {execution_time:.2f} seconds")
+
     print(f"Total key frames based on the threshold chosen: {len(selected_frames)}")
 
     # Selected frames display
@@ -164,10 +144,9 @@ def see():
         axs[i].set_title(f"Selected Frame {i}")
         axs[i].axis("off")
     plt.show()
-    
-    """
 
     return selected_frames
+
 
 if __name__ == "__main__":
     see()
