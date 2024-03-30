@@ -4,10 +4,18 @@ import cv2
 import easyocr
 from dotenv import load_dotenv
 
+from imagehash import phash
+from PIL import Image
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
 load_dotenv()
 
 reader = easyocr.Reader(["ch_sim", "en"])
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+
+# Changes to me made using vidgear library we want to stablize the videofeed to help in text extraction to do this we must first change the
+
 
 def read():
     """
@@ -74,3 +82,92 @@ def read():
         prev_time = section_time
 
     return text
+
+
+def see():
+    """
+    Capture 30 frames from the webcam and save them as an MP4 video.
+    Select distinct frames based on perceptual hash similarity.
+    """
+    start_time = time.time()
+    output_directory = "selected_frames"
+    os.makedirs(output_directory, exist_ok=True)
+
+    # Create a capture
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        cap.release()
+        raise RuntimeError("Could not open webcam")
+
+    n_frames = 60  # Number of frames to process
+    frame_rate = cap.get(cv2.CAP_PROP_FPS)
+    frame_width = int(cap.get(3))
+    frame_height = int(cap.get(4))
+    size = (frame_width, frame_height)
+
+    # Create a VideoWriter object to save the frames as an MP4 video
+    out = cv2.VideoWriter(
+        "output.mp4", cv2.VideoWriter_fourcc(*"mp4v"), frame_rate, size
+    )
+
+    for i in range(n_frames):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        # Write the frame to the output video
+        out.write(frame)
+        # Save the frame as an image in the output directory
+        cv2.imwrite(os.path.join(output_directory, f"frame_{i}.jpg"), frame)
+
+    cap.release()
+    out.release()
+
+    cap = cv2.VideoCapture("output.mp4")
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print(f"Video Capture: {execution_time:.2f} seconds")
+
+    selected_frames = []
+    previous_hashes = []
+    hash_threshold = 5  # Adjust this threshold as needed
+
+    for frame_idx in tqdm(range(n_frames), desc="Processing Frames"):
+        ret, img = cap.read()
+        if not ret:
+            break
+
+        # Calculate the perceptual hash of the current frame
+        current_hash = phash(Image.fromarray(img))
+
+        # Compare the current hash with the previous selected frame hashes
+        if not previous_hashes or all(
+            current_hash - prev_hash >= hash_threshold for prev_hash in previous_hashes
+        ):
+            selected_frames.append(img)
+            previous_hashes.append(current_hash)
+            # Saving the selected frame to the output directory
+            frame_filename = os.path.join(
+                output_directory, f"frame_{frame_idx:04d}.png"
+            )
+            cv2.imwrite(frame_filename, img)
+
+    # Releasing the video capture object to free the space captured
+    cap.release()
+
+    """     
+    print(f"Total key frames based on the threshold chosen: {len(selected_frames)}")
+
+    # Selected frames display
+    fig, axs = plt.subplots(1, len(selected_frames), figsize=(30, 10))
+    for i, frame in enumerate(selected_frames):
+        axs[i].imshow(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        axs[i].set_title(f"Selected Frame {i}")
+        axs[i].axis("off")
+    plt.show()
+    
+    """
+
+    return selected_frames
+
+if __name__ == "__main__":
+    see()
