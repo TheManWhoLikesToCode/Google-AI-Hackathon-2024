@@ -12,7 +12,7 @@ import speech_recognition as sr
 from gtts import gTTS
 from dotenv import load_dotenv
 import google.generativeai as genai
-from tools import read, see
+from llm_tools import read, see
 from config import generation_config, safety_settings
 
 load_dotenv()
