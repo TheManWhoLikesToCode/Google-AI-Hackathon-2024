@@ -1,21 +1,20 @@
 import time
 import os
+import shutil
+from pathlib import Path
 import cv2
-import easyocr
+from paddleocr import PaddleOCR
 from dotenv import load_dotenv
 
 from tqdm import tqdm
-import shutil
 import google.generativeai as genai
 from imagehash import phash
 from PIL import Image
-import matplotlib.pyplot as plt
 from config import generation_config, safety_settings
-from pathlib import Path
 
 load_dotenv()
 
-reader = easyocr.Reader(["ch_sim", "en"])
+reader = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
 genai.configure(api_key=GOOGLE_API_KEY)
@@ -53,7 +52,7 @@ def read():
     camera_warmup_start = time.time()  # Start time for camera warm-up
 
     # Wait for the camera to warm up
-    for _ in range(3):
+    for _ in range(5):
         cap.read()
 
     section_times.append(time.time())  # Mark end of camera warm-up
@@ -74,30 +73,53 @@ def read():
 
     text_extraction_start = time.time()  # Start time for text extraction
 
-    text = reader.readtext(frame)
-
-    # Extract the text from the result with confidence threshold over 75
-    text = [result[1] for result in text if result[2] > 0.50]
+    # Use EasyOCR for text extraction
+    result = reader.ocr(frame, cls=True)
+    if result and result[0]:
+        # Extract the text from the OCR result
+        ocr_text = " ".join([line[1][0] for line in result[0]])
+    else:
+        ocr_text = ""
 
     section_times.append(time.time())  # Mark end of text extraction
+
+    # Convert the frame to JPEG format and get the byte data
+    _, img_data = cv2.imencode(".jpg", frame)
+    img_bytes = img_data.tobytes()
+
+    # Pass the OCR text and the captured image to Gemini for further processing
+    prompt_parts = [
+        "Instructions: The following text was extracted from an image using OCR. Please process the text and provide a cleaned-up version without any hallucinations or additions.",
+        ocr_text,
+        "Processed Text:",
+        {"mime_type": "image/jpeg", "data": img_bytes},
+    ]
+    try:
+        response = model.generate_content(prompt_parts)
+        gemini_text = response.text.strip()
+    except ValueError as e:
+        print("Error occurred while generating content:")
+        print(str(e))
+        gemini_text = ""
 
     total_time = time.time() - start_time
     prev_time = start_time
 
     print("Time taken for each section and their percentage of total runtime:")
     sections = ["Initialization", "Camera Warm-Up", "Image Capture", "Text Extraction"]
-    for i, (section, section_time) in enumerate(zip(sections, section_times)):
+    for _, (section, section_time) in enumerate(zip(sections, section_times)):
         section_duration = section_time - prev_time
         percentage = (section_duration / total_time) * 100
         print(f"{section}: {section_duration:.2f}s, {percentage:.2f}%")
         prev_time = section_time
 
-    return text
+    return gemini_text
 
 
 def see():
     """
-    Capture frames from the webcam in real-time and select distinct frames based on perceptual hash similarity.
+    Capture frames from the webcam in real-time and select
+    distinct frames based on perceptual hash similarity.
     """
     start_time = time.time()
     output_directory = "selected_frames"
@@ -111,12 +133,10 @@ def see():
 
     n_frames = 60  # Number of frames to process
     frame_rate = cap.get(cv2.CAP_PROP_FPS)
-    frame_width = int(cap.get(3))
-    frame_height = int(cap.get(4))
 
     selected_frames = []
     previous_hashes = []
-    hash_threshold = 10  # Adjust this threshold as needed
+    hash_threshold = 15  # Adjust this threshold as needed
 
     for frame_idx in tqdm(range(n_frames), desc="Processing Frames"):
         ret, img = cap.read()
@@ -171,7 +191,3 @@ def see():
 
     shutil.rmtree(output_directory)
     return response.text
-
-
-if __name__ == "__main__":
-    see()
