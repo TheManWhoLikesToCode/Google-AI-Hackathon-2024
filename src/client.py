@@ -2,7 +2,6 @@
 Author: Jaydin F
 Date: 03/29/2024
 Description: Client
-
 """
 
 import os
