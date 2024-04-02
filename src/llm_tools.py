@@ -33,6 +33,18 @@ model = genai.GenerativeModel(
 )
 
 
+def print_section_times(sections, section_times, start_time):
+    total_time = time.time() - start_time
+    prev_time = start_time
+
+    print("Time taken for each section and their percentage of total runtime:")
+    for _, (section, section_time) in enumerate(zip(sections, section_times)):
+        section_duration = section_time - prev_time
+        percentage = (section_duration / total_time) * 100
+        print(f"{section}: {section_duration:.2f}s, {percentage:.2f}%")
+        prev_time = section_time
+
+
 def read():
     """
     Reads text from the user's webcam.
@@ -55,29 +67,23 @@ def read():
     # Capture an image from the user's webcam
     cap = cv2.VideoCapture(0)
 
-    camera_warmup_start = time.time()  # Start time for camera warm-up
-
     # Wait for the camera to warm up
     for _ in range(5):
         cap.read()
 
-    section_times.append(time.time())  # Mark end of camera warm-up
+    section_times.append(time.time())  # Mark end of setup
 
     if not cap.isOpened():
         cap.release()
         raise RuntimeError("Could not open webcam")
 
-    capture_start = time.time()  # Start time for capturing image
-
     ret, frame = cap.read()
     cap.release()
 
-    section_times.append(time.time())  # Mark end of image capture
+    section_times.append(time.time())  # Mark end of data capture
 
     if not ret:
         raise RuntimeError("Failed to capture image from webcam")
-
-    text_extraction_start = time.time()  # Start time for text extraction
 
     # Use EasyOCR for text extraction
     result = reader.ocr(frame, cls=True)
@@ -87,7 +93,7 @@ def read():
     else:
         ocr_text = ""
 
-    section_times.append(time.time())  # Mark end of text extraction
+    section_times.append(time.time())  # Mark end of data processing
 
     # Convert the frame to JPEG format and get the byte data
     _, img_data = cv2.imencode(".jpg", frame)
@@ -108,16 +114,16 @@ def read():
         print(str(e))
         gemini_text = ""
 
-    total_time = time.time() - start_time
-    prev_time = start_time
+    section_times.append(time.time())  # Mark end of model generation
 
-    print("Time taken for each section and their percentage of total runtime:")
-    sections = ["Initialization", "Camera Warm-Up", "Image Capture", "Text Extraction"]
-    for _, (section, section_time) in enumerate(zip(sections, section_times)):
-        section_duration = section_time - prev_time
-        percentage = (section_duration / total_time) * 100
-        print(f"{section}: {section_duration:.2f}s, {percentage:.2f}%")
-        prev_time = section_time
+    sections = [
+        "Initialization",
+        "Setup",
+        "Data Capture",
+        "Data Processing",
+        "Model Generation",
+    ]
+    print_section_times(sections, section_times, start_time)
 
     return gemini_text
 
@@ -142,7 +148,6 @@ def see():
         raise RuntimeError("Could not open webcam")
 
     n_frames = 60  # Number of frames to process
-    frame_rate = cap.get(cv2.CAP_PROP_FPS)
 
     selected_frames = []
     previous_hashes = []
@@ -171,18 +176,12 @@ def see():
             )
             cv2.imwrite(frame_filename, img)
 
-    section_times.append(time.time())  # Mark end of frame processing
+    section_times.append(time.time())  # Mark end of data capture
 
     # Releasing the video capture object to free the space captured
     cap.release()
 
-    end_time = time.time()
-    execution_time = end_time - start_time
-    print(f"Real-time Frame Capture: {execution_time:.2f} seconds")
-
     print(f"Total key frames based on the threshold chosen: {len(selected_frames)}")
-
-    section_times.append(time.time())  # Mark end of post-processing
 
     image_parts = []
     for i in os.listdir("selected_frames"):
@@ -198,6 +197,8 @@ def see():
     prompt_parts.extend(image_parts)
     prompt_parts.append("Description:")
 
+    section_times.append(time.time())  # Mark end of data processing
+
     try:
         response = model.generate_content(prompt_parts)
     except ValueError as e:
@@ -209,22 +210,14 @@ def see():
 
     shutil.rmtree(output_directory)
 
-    total_time = time.time() - start_time
-    prev_time = start_time
-
-    print("Time taken for each section and their percentage of total runtime:")
     sections = [
         "Initialization",
         "Setup",
-        "Frame Processing",
-        "Post-Processing",
+        "Data Capture",
+        "Data Processing",
         "Model Generation",
     ]
-    for _, (section, section_time) in enumerate(zip(sections, section_times)):
-        section_duration = section_time - prev_time
-        percentage = (section_duration / total_time) * 100
-        print(f"{section}: {section_duration:.2f}s, {percentage:.2f}%")
-        prev_time = section_time
+    print_section_times(sections, section_times, start_time)
 
     return response.text
 
