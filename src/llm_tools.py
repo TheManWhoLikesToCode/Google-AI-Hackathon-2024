@@ -128,6 +128,10 @@ def see():
     distinct frames based on perceptual hash similarity.
     """
     start_time = time.time()
+    section_times = []  # List to store times of each section
+
+    section_times.append(time.time())  # Mark end of initialization
+
     output_directory = "selected_frames"
     os.makedirs(output_directory, exist_ok=True)
 
@@ -143,6 +147,8 @@ def see():
     selected_frames = []
     previous_hashes = []
     hash_threshold = 15  # Adjust this threshold as needed
+
+    section_times.append(time.time())  # Mark end of setup
 
     for frame_idx in tqdm(range(n_frames), desc="Processing Frames"):
         ret, img = cap.read()
@@ -165,6 +171,8 @@ def see():
             )
             cv2.imwrite(frame_filename, img)
 
+    section_times.append(time.time())  # Mark end of frame processing
+
     # Releasing the video capture object to free the space captured
     cap.release()
 
@@ -173,6 +181,8 @@ def see():
     print(f"Real-time Frame Capture: {execution_time:.2f} seconds")
 
     print(f"Total key frames based on the threshold chosen: {len(selected_frames)}")
+
+    section_times.append(time.time())  # Mark end of post-processing
 
     image_parts = []
     for i in os.listdir("selected_frames"):
@@ -195,5 +205,30 @@ def see():
         print(str(e))
         response = None
 
+    section_times.append(time.time())  # Mark end of model generation
+
     shutil.rmtree(output_directory)
+
+    total_time = time.time() - start_time
+    prev_time = start_time
+
+    print("Time taken for each section and their percentage of total runtime:")
+    sections = [
+        "Initialization",
+        "Setup",
+        "Frame Processing",
+        "Post-Processing",
+        "Model Generation",
+    ]
+    for _, (section, section_time) in enumerate(zip(sections, section_times)):
+        section_duration = section_time - prev_time
+        percentage = (section_duration / total_time) * 100
+        print(f"{section}: {section_duration:.2f}s, {percentage:.2f}%")
+        prev_time = section_time
+
     return response.text
+
+
+if __name__ == "__main__":
+    read()
+    see()
