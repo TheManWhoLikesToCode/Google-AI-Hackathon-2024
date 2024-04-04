@@ -2,6 +2,7 @@ import os
 import cv2
 import time
 import torch
+import logging
 import argparse
 import numpy as np
 
@@ -19,6 +20,10 @@ from ActionsEstLoader import TSSTG
 #source = '../Data/falldata/Home/Videos/video (2).avi'  # hard detect
 source = '../Data/falldata/Home/Videos/video (1).avi'
 #source = 2
+# Set up logging
+
+logging.basicConfig(filename='user_events.log', level=logging.INFO,
+                    format='%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 
 def preproc(image):
@@ -156,6 +161,10 @@ if __name__ == '__main__':
                 out = action_model.predict(pts, frame.shape[:2])
                 action_name = action_model.class_names[out[0].argmax()]
                 action = '{}: {:.2f}%'.format(action_name, out[0].max() * 100)
+                
+                # Log the user event
+                logging.info(f'User {track_id}: {action_name}')
+                
                 if action_name == 'Fall Down':
                     clr = (255, 0, 0)
                 elif action_name == 'Lying Down':
