@@ -413,15 +413,20 @@ async def stream(request: Request):
     print(f"Show skeleton: {show_skeleton}")
 
     print("Starting to process the stream...")
-    stream_generator = process_stream(cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton)
+    stream_generator = process_stream(
+        cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton
+    )
 
     return StreamingResponse(
         stream_generator,
         media_type="multipart/x-mixed-replace;boundary=frame",
     )
 
+
 if __name__ == "__main__":
     import uvicorn
+    import argparse
+    import socket
 
     par = argparse.ArgumentParser(description="Human Fall Detection Demo.")
     par.add_argument(
@@ -458,8 +463,16 @@ if __name__ == "__main__":
         "--save_out", type=str, default="", help="Save display to video file."
     )
     par.add_argument(
-        "--device", type=str, default="cuda", help="Device to run model on cpu or cuda."
+        "--device",
+        type=str,
+        default="cuda",
+        help="Device to run model on cpu or cuda.",
     )
     args = par.parse_args()
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Get the local IP address
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+
+    # Run the server on the local IP address
+    uvicorn.run(app, host=local_ip, port=8000)
