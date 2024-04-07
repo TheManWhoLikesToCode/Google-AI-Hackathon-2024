@@ -90,6 +90,37 @@
   background-color: #555;
 }
 
+.header {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  padding: 1rem;
+}
+
+.aboutLink {
+  text-decoration: none;
+  color: inherit;
+  font-weight: bold;
+  padding: 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.3s ease;
+}
+
+.aboutLink:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.aboutLink:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+
+.aboutLink:active {
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
 .logo {
   height: 1em;
 }
