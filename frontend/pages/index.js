@@ -43,6 +43,10 @@ export default function Home() {
     console.log('Uploaded file:', file);
   };
 
+  const handleRedirect = () => {
+    window.location.href = "/";
+  };
+
   return (
     <div className={styles.container}>
 
@@ -54,7 +58,42 @@ export default function Home() {
         <title>Demo Page</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
+      
+      <sidenav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+        <a href="/contact">Contact</a>
+        <button onClick={handleOpenDialog} className={styles.button}>
+          Account
+        </button>
 
+        {isDialogOpen && (
+          <div className={styles.dialog}>
+            <h3>Create Account</h3>
+            <form>
+              <label htmlFor="email">Email:</label>
+              <input type="email" id="email" />
+
+              <label htmlFor="password">Password:</label>
+              <input type="password" id="password" />
+
+              <button type="submit">Create Account</button>
+            </form>
+
+            <h3>Sign In</h3>
+            <form>
+              <label htmlFor="email">Email:</label>
+              <input type="email" id="email" />
+
+              <label htmlFor="password">Password:</label>
+              <input type="password" id="password" />
+
+              <button type="submit">Sign In</button>
+            </form>
+          </div>
+        )}
+        
+      </sidenav>
 
       <main>
         <h1 className={styles.title}>SafeSteps</h1>
