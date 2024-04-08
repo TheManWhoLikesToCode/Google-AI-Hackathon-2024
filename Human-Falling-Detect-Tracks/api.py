@@ -9,6 +9,7 @@ import tempfile
 import shutil
 from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from Detection.Utils import ResizePadding
 from CameraLoader import CamLoader, CamLoader_Q
@@ -19,6 +20,20 @@ from Track.Tracker import Detection, Tracker
 from ActionsEstLoader import TSSTG
 
 app = FastAPI()
+
+orgins = [
+    "http://localhost",
+    "http://localhost:3000",
+]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=orgins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def preproc(image, resize_fn):
@@ -41,7 +56,6 @@ def kpt2bbox(kpt, ex=20):
             kpt[:, 1].max() + ex,
         )
     )
-
 
 def process_video(video_path, output_video_path):
     device = "cpu"  # or 'cpu'
@@ -119,15 +133,6 @@ def process_video(video_path, output_video_path):
                 for ps in poses
             ]
 
-            # VISUALIZE.
-            if True:
-                for bb in detected[:, 0:5]:
-                    x1 = int(bb[0].item())
-                    y1 = int(bb[1].item())
-                    x2 = int(bb[2].item())
-                    y2 = int(bb[3].item())
-                    frame = cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 1)
-
         # Update tracks by matching each track information of current and previous frame or
         # create a new track if no matched.
         tracker.update(detections)
@@ -184,26 +189,11 @@ def process_video(video_path, output_video_path):
                     1,
                 )
 
-        # Show Frame.
-        frame = cv2.resize(frame, (0, 0), fx=2.0, fy=2.0)
-        frame = cv2.putText(
-            frame,
-            "%d, FPS: %f" % (f, 1.0 / (time.time() - fps_time)),
-            (10, 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 255, 0),
-            1,
-        )
-        frame = frame[:, :, ::-1]
-        fps_time = time.time()
-
         writer.write(frame)
 
     # Clear resource.
     cam.stop()
     writer.release()
-
 
 @app.post("/trace_video")
 async def trace_video(file: UploadFile = File(...)):
