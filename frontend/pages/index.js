@@ -3,6 +3,7 @@ import styles from '../styles/Home.module.css';
 import { useRef, useEffect, useState } from 'react';
 
 export default function Home() {
+  const canvasRef = useRef(null);
   const videoRef = useRef(null);
   const [isStreaming, setIsStreaming] = useState(false);
 
@@ -11,17 +12,63 @@ export default function Home() {
       stopStream();
     };
   }, []);
-
   const startStream = async () => {
     try {
-      const response = await fetch('http://localhost:8000/stream');
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      videoRef.current.src = url;
-      videoRef.current.play();
+      console.log('Starting stream...');
+      const params = {
+        camera: 0,
+        detection_input_size: 384,
+        pose_input_size: '224x160',
+        device: 'cpu',
+        show_detected: true,
+        show_skeleton: true,
+      };
+      const url = 'http://localhost:8000/stream';
+      const queryString = Object.entries(params)
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('&');
+      const response = await fetch(`${url}?${queryString}`, { mode: 'cors' });
+      console.log('Response status code:', response.status);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      console.log('Creating a window to display the video stream...');
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        throw new Error('Canvas element not found.');
+      }
       setIsStreaming(true);
+      const ctx = canvas.getContext('2d');
+      let jpg = new Uint8Array();
+      let frameCount = 0;
+      const reader = response.body.getReader();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        jpg = new Uint8Array([...jpg, ...value]);
+        let a = jpg.findIndex((val, i) => val === 0xff && jpg[i + 1] === 0xd8);
+        let b = jpg.findIndex((val, i) => val === 0xff && jpg[i + 1] === 0xd9);
+        if (a !== -1 && b !== -1) {
+          const frameData = jpg.slice(a, b + 2);
+          jpg = jpg.slice(b + 2);
+          const blob = new Blob([frameData], { type: 'image/jpeg' });
+          const frame = await createImageBitmap(blob);
+          if (frame) {
+            console.log(`Displaying frame ${frameCount} with size: ${frame.width}x${frame.height}...`);
+            canvas.width = frame.width;
+            canvas.height = frame.height;
+            ctx.drawImage(frame, 0, 0);
+            frameCount++;
+          } else {
+            console.log('Failed to decode JPEG frame.');
+          }
+        }
+      }
+      console.log('Stream started successfully');
     } catch (error) {
-      console.error('Error accessing camera:', error);
+      console.error('Error:', error);
+    } finally {
+      console.log('Closing the stream...');
     }
   };
 
@@ -95,7 +142,7 @@ export default function Home() {
               Click the "Start Stream" button to start the live camera stream.
               Click "Stop Stream" to stop the stream.
             </p>
-            <video ref={videoRef} className={styles.video} />
+            <canvas ref={canvasRef} className={styles.video} />
             {!isStreaming && (
               <button onClick={startStream} className={styles.button}>
                 Start Stream
