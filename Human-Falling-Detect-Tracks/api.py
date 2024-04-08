@@ -92,9 +92,9 @@ def process_video(video_path, output_video_path):
             preprocess=lambda x: preproc(x, resize_fn),
         ).start()
 
-    codec = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(output_video_path, codec, 30, (inp_dets * 2, inp_dets * 2))
-
+    codec = cv2.VideoWriter_fourcc(*'avc1')
+    writer = cv2.VideoWriter(output_video_path, codec, 30, (inp_dets, inp_dets))
+    
     fps_time = 0
     f = 0
     while cam.grabbed():
@@ -189,6 +189,7 @@ def process_video(video_path, output_video_path):
                     1,
                 )
 
+        frame = cv2.resize(frame, (inp_dets, inp_dets))
         writer.write(frame)
 
     # Clear resource.
