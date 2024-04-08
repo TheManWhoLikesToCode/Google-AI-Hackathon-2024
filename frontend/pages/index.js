@@ -5,6 +5,8 @@ import { useRef, useEffect, useState } from 'react';
 export default function Home() {
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isStartingStream, setIsStartingStream] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
 
   useEffect(() => {
@@ -15,6 +17,7 @@ export default function Home() {
   const startStream = async () => {
     try {
       console.log('Starting stream...');
+      setIsStartingStream(true); // Set isStartingStream to true when starting the stream
       const params = {
         camera: 0,
         detection_input_size: 384,
@@ -38,6 +41,7 @@ export default function Home() {
         throw new Error('Canvas element not found.');
       }
       setIsStreaming(true);
+      setIsStartingStream(false); // Set isStartingStream to false after starting the stream
       const ctx = canvas.getContext('2d');
       let jpg = new Uint8Array();
       let frameCount = 0;
@@ -67,6 +71,7 @@ export default function Home() {
       console.log('Stream started successfully');
     } catch (error) {
       console.error('Error:', error);
+      setIsStartingStream(false); // Set isStartingStream to false if there is an error
     } finally {
       console.log('Closing the stream...');
     }
@@ -86,6 +91,7 @@ export default function Home() {
     formData.append('file', file);
 
     try {
+      setIsUploading(true);
       const response = await fetch('http://localhost:8000/trace_video', {
         method: 'POST',
         body: formData,
@@ -97,11 +103,16 @@ export default function Home() {
         const url = URL.createObjectURL(blob);
         // Open the traced video in a new window or display it as needed
         window.open(url, '_blank');
+        alert('Video uploaded and traced successfully!');
       } else {
         console.error('Error uploading file:', response.statusText);
+        alert('Error uploading file. Please try again.');
       }
     } catch (error) {
       console.error('Error uploading file:', error);
+      alert('Error uploading file. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -126,13 +137,14 @@ export default function Home() {
           <div className={styles.card}>
             <h3>Upload File</h3>
             <p>Click the button below to upload a video file:</p>
-            <label htmlFor="fileInput" className={styles.button}>
-              Choose File
+            <label htmlFor="fileInput" className={styles.button} disabled={isUploading}>
+              {isUploading ? 'Uploading...' : 'Choose File'}
               <input
                 id="fileInput"
                 type="file"
                 onChange={handleUpload}
                 style={{ display: 'none' }}
+                disabled={isUploading}
               />
             </label>
           </div>
@@ -144,8 +156,8 @@ export default function Home() {
             </p>
             <canvas ref={canvasRef} className={styles.video} />
             {!isStreaming && (
-              <button onClick={startStream} className={styles.button}>
-                Start Stream
+              <button onClick={startStream} className={styles.button} disabled={isStartingStream}>
+                {isStartingStream ? 'Starting Stream...' : 'Start Stream'}
               </button>
             )}
             {isStreaming && (
