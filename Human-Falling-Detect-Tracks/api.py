@@ -10,6 +10,13 @@ import shutil
 from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from config import generation_config, safety_settings
+import google.generativeai as genai
+from dotenv import load_dotenv
+from PIL import Image
+from imagehash import phash
+from tqdm import tqdm
+from pathlib import Path
 
 from Detection.Utils import ResizePadding
 from CameraLoader import CamLoader, CamLoader_Q
@@ -35,6 +42,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+load_dotenv()
+
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+
+genai.configure(api_key=GOOGLE_API_KEY)
+
+# Load Model
+model = genai.GenerativeModel(
+    model_name="gemini-pro-vision",
+    generation_config=generation_config,
+    safety_settings=safety_settings,
+)
+
 
 def preproc(image, resize_fn):
     """preprocess function for CameraLoader."""
@@ -56,6 +76,118 @@ def kpt2bbox(kpt, ex=20):
             kpt[:, 1].max() + ex,
         )
     )
+
+
+def print_section_times(sections, section_times, start_time):
+    total_time = time.time() - start_time
+    prev_time = start_time
+
+    print("Time taken for each section and their percentage of total runtime:")
+    for _, (section, section_time) in enumerate(zip(sections, section_times)):
+        section_duration = section_time - prev_time
+        percentage = (section_duration / total_time) * 100
+        print(f"{section}: {section_duration:.2f}s, {percentage:.2f}%")
+        prev_time = section_time
+
+
+@app.post("/process_video_with_gemini")
+async def process_video_with_gemini(file: UploadFile = File(...)):
+    start_time = time.time()
+    section_times = []
+    section_times.append(time.time())  # Mark end of initialization
+
+    output_directory = "selected_frames"
+    os.makedirs(output_directory, exist_ok=True)
+
+    # Save the uploaded video to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+        temp_file.write(await file.read())
+        video_path = temp_file.name
+
+    # Open the video file
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        cap.release()
+        raise RuntimeError("Could not open video file")
+
+    n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    selected_frames = []
+    previous_hashes = []
+    hash_threshold = 15  # Adjust this threshold as needed
+    max_frames = 14  # Maximum number of frames to select
+
+    section_times.append(time.time())  # Mark end of setup
+
+    for frame_idx in tqdm(range(n_frames), desc="Processing Frames"):
+        ret, img = cap.read()
+        if not ret:
+            break
+
+        # Calculate the perceptual hash of the current frame
+        current_hash = phash(Image.fromarray(img))
+
+        # Compare the current hash with the previous selected frame hashes
+        if not previous_hashes or all(
+            current_hash - prev_hash >= hash_threshold for prev_hash in previous_hashes
+        ):
+            if len(selected_frames) < max_frames:
+                selected_frames.append(img)
+                previous_hashes.append(current_hash)
+
+                # Saving the selected frame to the output directory
+                frame_filename = os.path.join(
+                    output_directory, f"frame_{frame_idx:04d}.png"
+                )
+                cv2.imwrite(frame_filename, img)
+
+        # Break the loop if the maximum number of frames is reached
+        if len(selected_frames) >= max_frames:
+            break
+
+    section_times.append(time.time())  # Mark end of data capture
+
+    # Releasing the video capture object and deleting the temporary file
+    cap.release()
+    os.unlink(video_path)
+
+    print(f"Total key frames selected: {len(selected_frames)}")
+
+    image_parts = []
+    for i in range(len(selected_frames)):
+        image_data = cv2.imencode('.png', selected_frames[i])[1].tobytes()
+        image_part = {"mime_type": "image/png", "data": image_data}
+        image_parts.append(image_part)
+
+    # Get the prompt from prompt.py
+    from prompt import prompt_parts
+
+    prompt_parts.extend(image_parts)
+    prompt_parts.append("Description:")
+
+    section_times.append(time.time())  # Mark end of data processing
+
+    try:
+        # Pass the video and prompt to Google AI Studio Gemini
+        response = model.generate_content(prompt_parts)
+    except ValueError as e:
+        print("Error occurred while generating content:")
+        print(str(e))
+        response = None
+
+    section_times.append(time.time())  # Mark end of model generation
+
+    shutil.rmtree(output_directory)
+
+    sections = [
+        "Initialization",
+        "Setup",
+        "Data Capture",
+        "Data Processing",
+        "Model Generation",
+    ]
+    print_section_times(sections, section_times, start_time)
+
+    return response.text if response else None
 
 def process_video(video_path, output_video_path):
     device = "cpu"  # or 'cpu'
@@ -92,9 +224,9 @@ def process_video(video_path, output_video_path):
             preprocess=lambda x: preproc(x, resize_fn),
         ).start()
 
-    codec = cv2.VideoWriter_fourcc(*'avc1')
+    codec = cv2.VideoWriter_fourcc(*"avc1")
     writer = cv2.VideoWriter(output_video_path, codec, 30, (inp_dets, inp_dets))
-    
+
     fps_time = 0
     f = 0
     while cam.grabbed():
@@ -195,6 +327,7 @@ def process_video(video_path, output_video_path):
     # Clear resource.
     cam.stop()
     writer.release()
+
 
 @app.post("/trace_video")
 async def trace_video(file: UploadFile = File(...)):
