@@ -353,9 +353,7 @@ async def trace_video(file: UploadFile = File(...)):
     )
 
 
-def process_stream(
-    cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton
-):
+def process_stream( cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton, return_type, timeout ): 
     resize_fn = ResizePadding(inp_dets, inp_dets)
 
     if type(cam_source) is str and os.path.isfile(cam_source):
@@ -370,145 +368,155 @@ def process_stream(
             preprocess=lambda x: preproc(x, resize_fn),
         ).start()
 
-    # DETECTION MODEL.
-    detect_model = TinyYOLOv3_onecls(inp_dets, device=device)
+    try:
+        # DETECTION MODEL.
+        detect_model = TinyYOLOv3_onecls(inp_dets, device=device)
 
-    # POSE MODEL.
-    pose_model = SPPE_FastPose("resnet50", inp_pose[0], inp_pose[1], device=device)
+        # POSE MODEL.
+        pose_model = SPPE_FastPose("resnet50", inp_pose[0], inp_pose[1], device=device)
 
-    # Tracker.
-    max_age = 30
-    tracker = Tracker(max_age=max_age, n_init=3)
+        # Tracker.
+        max_age = 30
+        tracker = Tracker(max_age=max_age, n_init=3)
 
-    # Actions Estimate.
-    action_model = TSSTG()
+        # Actions Estimate.
+        action_model = TSSTG()
 
-    fps_time = 0
-    f = 0
-    while cam.grabbed():
-        f += 1
-        frame = cam.getitem()
-        image = frame.copy()
+        fps_time = 0
+        f = 0
+        start_time = time.time()
+        logs = []
+        while cam.grabbed() and time.time() - start_time < timeout:
+            f += 1
+            frame = cam.getitem()
+            image = frame.copy()
 
-        # Detect humans bbox in the frame with detector model.
-        detected = detect_model.detect(frame, need_resize=False, expand_bb=10)
+            # Detect humans bbox in the frame with detector model.
+            detected = detect_model.detect(frame, need_resize=False, expand_bb=10)
 
-        # Predict each tracks bbox of current frame from previous frames information with Kalman filter.
-        tracker.predict()
-        # Merge two source of predicted bbox together.
-        for track in tracker.tracks:
-            det = torch.tensor(
-                [track.to_tlbr().tolist() + [0.5, 1.0, 0.0]], dtype=torch.float32
+            # Predict each tracks bbox of current frame from previous frames information with Kalman filter.
+            tracker.predict()
+            # Merge two source of predicted bbox together.
+            for track in tracker.tracks:
+                det = torch.tensor(
+                    [track.to_tlbr().tolist() + [0.5, 1.0, 0.0]], dtype=torch.float32
+                )
+                detected = (
+                    torch.cat([detected, det], dim=0) if detected is not None else det
+                )
+
+            detections = []  # List of Detections object for tracking.
+            if detected is not None:
+                # Predict skeleton pose of each bboxs.
+                poses = pose_model.predict(frame, detected[:, 0:4], detected[:, 4])
+
+                # Create Detections object.
+                detections = [
+                    Detection(
+                        kpt2bbox(ps["keypoints"].numpy()),
+                        np.concatenate(
+                            (ps["keypoints"].numpy(), ps["kp_score"].numpy()), axis=1
+                        ),
+                        ps["kp_score"].mean().numpy(),
+                    )
+                    for ps in poses
+                ]
+
+                # VISUALIZE.
+                if show_detected:
+                    for bb in detected[:, 0:5]:
+                        x1 = int(bb[0].item())
+                        y1 = int(bb[1].item())
+                        x2 = int(bb[2].item())
+                        y2 = int(bb[3].item())
+                        frame = cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 1)
+
+            # Update tracks by matching each track information of current and previous frame or
+            # create a new track if no matched.
+            tracker.update(detections)
+
+            # Predict Actions of each track.
+            for i, track in enumerate(tracker.tracks):
+                if not track.is_confirmed():
+                    continue
+
+                track_id = track.track_id
+                bbox = track.to_tlbr().astype(int)
+                center = track.get_center().astype(int)
+
+                action = "pending.."
+                clr = (0, 255, 0)
+                # Use 30 frames time-steps to prediction.
+                if len(track.keypoints_list) == 30:
+                    pts = np.array(track.keypoints_list, dtype=np.float32)
+                    out = action_model.predict(pts, frame.shape[:2])
+                    action_name = action_model.class_names[out[0].argmax()]
+                    action = "{}: {:.2f}%".format(action_name, out[0].max() * 100)
+
+                    # Log the user event
+                    log_message = f"User {track_id}: {action_name}"
+                    logging.info(log_message)
+                    logs.append(log_message)
+
+                    if action_name == "Fall Down":
+                        clr = (255, 0, 0)
+                    elif action_name == "Lying Down":
+                        clr = (255, 200, 0)
+
+                # VISUALIZE.
+                if track.time_since_update == 0:
+                    if show_skeleton:
+                        frame = draw_single(frame, track.keypoints_list[-1])
+                    frame = cv2.rectangle(
+                        frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 1
+                    )
+                    frame = cv2.putText(
+                        frame,
+                        str(track_id),
+                        (center[0], center[1]),
+                        cv2.FONT_HERSHEY_COMPLEX,
+                        0.4,
+                        (255, 0, 0),
+                        2,
+                    )
+                    frame = cv2.putText(
+                        frame,
+                        action,
+                        (bbox[0] + 5, bbox[1] + 15),
+                        cv2.FONT_HERSHEY_COMPLEX,
+                        0.4,
+                        clr,
+                        1,
+                    )
+
+            # Show Frame.
+            frame = cv2.resize(frame, (0, 0), fx=2.0, fy=2.0)
+            frame = cv2.putText(
+                frame,
+                "%d, FPS: %f" % (f, 1.0 / (time.time() - fps_time)),
+                (10, 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                1,
             )
-            detected = (
-                torch.cat([detected, det], dim=0) if detected is not None else det
-            )
+            frame = frame[:, :, ::-1]
+            fps_time = time.time()
 
-        detections = []  # List of Detections object for tracking.
-        if detected is not None:
-            # Predict skeleton pose of each bboxs.
-            poses = pose_model.predict(frame, detected[:, 0:4], detected[:, 4])
-
-            # Create Detections object.
-            detections = [
-                Detection(
-                    kpt2bbox(ps["keypoints"].numpy()),
-                    np.concatenate(
-                        (ps["keypoints"].numpy(), ps["kp_score"].numpy()), axis=1
-                    ),
-                    ps["kp_score"].mean().numpy(),
+            if return_type == "annotated_stream":
+                # Convert frame to JPEG format
+                _, encoded_frame = cv2.imencode(".jpg", frame)
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + encoded_frame.tobytes() + b"\r\n"
                 )
-                for ps in poses
-            ]
+            elif return_type == "logs":
+                log_text = "\n".join(logs)
+                yield log_text
 
-            # VISUALIZE.
-            if show_detected:
-                for bb in detected[:, 0:5]:
-                    x1 = int(bb[0].item())
-                    y1 = int(bb[1].item())
-                    x2 = int(bb[2].item())
-                    y2 = int(bb[3].item())
-                    frame = cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 1)
-
-        # Update tracks by matching each track information of current and previous frame or
-        # create a new track if no matched.
-        tracker.update(detections)
-
-        # Predict Actions of each track.
-        for i, track in enumerate(tracker.tracks):
-            if not track.is_confirmed():
-                continue
-
-            track_id = track.track_id
-            bbox = track.to_tlbr().astype(int)
-            center = track.get_center().astype(int)
-
-            action = "pending.."
-            clr = (0, 255, 0)
-            # Use 30 frames time-steps to prediction.
-            if len(track.keypoints_list) == 30:
-                pts = np.array(track.keypoints_list, dtype=np.float32)
-                out = action_model.predict(pts, frame.shape[:2])
-                action_name = action_model.class_names[out[0].argmax()]
-                action = "{}: {:.2f}%".format(action_name, out[0].max() * 100)
-
-                # Log the user event
-                logging.info(f"User {track_id}: {action_name}")
-
-                if action_name == "Fall Down":
-                    clr = (255, 0, 0)
-                elif action_name == "Lying Down":
-                    clr = (255, 200, 0)
-
-            # VISUALIZE.
-            if track.time_since_update == 0:
-                if show_skeleton:
-                    frame = draw_single(frame, track.keypoints_list[-1])
-                frame = cv2.rectangle(
-                    frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 1
-                )
-                frame = cv2.putText(
-                    frame,
-                    str(track_id),
-                    (center[0], center[1]),
-                    cv2.FONT_HERSHEY_COMPLEX,
-                    0.4,
-                    (255, 0, 0),
-                    2,
-                )
-                frame = cv2.putText(
-                    frame,
-                    action,
-                    (bbox[0] + 5, bbox[1] + 15),
-                    cv2.FONT_HERSHEY_COMPLEX,
-                    0.4,
-                    clr,
-                    1,
-                )
-
-        # Show Frame.
-        frame = cv2.resize(frame, (0, 0), fx=2.0, fy=2.0)
-        frame = cv2.putText(
-            frame,
-            "%d, FPS: %f" % (f, 1.0 / (time.time() - fps_time)),
-            (10, 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 255, 0),
-            1,
-        )
-        frame = frame[:, :, ::-1]
-        fps_time = time.time()
-
-        # Convert frame to JPEG format
-        _, encoded_frame = cv2.imencode(".jpg", frame)
-        yield (
-            b"--frame\r\n"
-            b"Content-Type: image/jpeg\r\n\r\n" + encoded_frame.tobytes() + b"\r\n"
-        )
-
-    # Clear resource.
-    cam.stop()
+    finally:
+        # Clear resource.
+        cam.stop()
 
 
 @app.get("/stream")
@@ -536,16 +544,24 @@ async def stream(request: Request):
     show_skeleton = request.query_params.get("show_skeleton", "True").lower() == "true"
     print(f"Show skeleton: {show_skeleton}")
 
+    return_type = request.query_params.get("return_type", "annotated_stream")
+    print(f"Return type: {return_type}")
+
+    timeout = int(request.query_params.get("timeout", 15))
+    print(f"Timeout: {timeout} seconds")
+
     print("Starting to process the stream...")
     stream_generator = process_stream(
-        cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton
+        cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton, return_type, timeout
     )
 
-    return StreamingResponse(
-        stream_generator,
-        media_type="multipart/x-mixed-replace;boundary=frame",
-    )
-
+    if return_type == "annotated_stream":
+        return StreamingResponse(
+            stream_generator,
+            media_type="multipart/x-mixed-replace;boundary=frame",
+        )
+    elif return_type == "logs":
+        return StreamingResponse(stream_generator, media_type="text/plain")
 
 if __name__ == "__main__":
     import uvicorn
