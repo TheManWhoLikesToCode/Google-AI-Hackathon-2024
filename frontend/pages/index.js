@@ -8,6 +8,8 @@ export default function Home() {
   const [returnType, setReturnType] = useState('annotated_stream');
   const [uploadReturnType, setUploadReturnType] = useState('annotated_video');
   const [logs, setLogs] = useState([]);
+  const [streamOutput, setStreamOutput] = useState(null);
+  const [uploadOutput, setUploadOutput] = useState(null);
 
   useEffect(() => {
     return () => {
@@ -65,6 +67,7 @@ export default function Home() {
               canvas.height = frame.height;
               ctx.drawImage(frame, 0, 0);
               frameCount++;
+              setStreamOutput(canvas.toDataURL());
             } else {
               console.log('Failed to decode JPEG frame.');
             }
@@ -108,32 +111,29 @@ export default function Home() {
   const stopStream = () => {
     setIsStreaming(false);
     setLogs([]);
+    setStreamOutput(null);
   };
-
   const handleUpload = async (event) => {
     const file = event.target.files[0];
     const formData = new FormData();
     formData.append('file', file);
     console.log('Returning:', uploadReturnType);
-  
+
     try {
       const response = await fetch(`http://localhost:8000/trace_video?return_type=${uploadReturnType}`, {
         method: 'POST',
         body: formData,
         mode: 'cors',
       });
-  
+
       if (response.ok) {
         if (uploadReturnType === 'annotated_video') {
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
-          // Open the traced video in a new window or display it as needed
-          window.open(url, '_blank');
+          setUploadOutput(url);
         } else if (uploadReturnType === 'fall_detection') {
-          const text = await response.text();
-          // Display the detected falls or perform any desired action with the text response
-          console.log('Detected falls:', text);
-          // You can update the UI or perform any other actions based on the response
+          const isFalling = await response.json();
+          setUploadOutput(isFalling);
         }
       } else {
         console.error('Error uploading file:', response.statusText);
@@ -181,6 +181,15 @@ export default function Home() {
                 style={{ display: 'none' }}
               />
             </label>
+            <div className={styles.outputCard}>
+              <h3>Upload Output</h3>
+              {uploadOutput !== null && uploadReturnType === 'annotated_video' && (
+                <video src={uploadOutput} controls className={styles.outputVideo} />
+              )}
+              {uploadOutput !== null && uploadReturnType === 'fall_detection' && (
+                <p>{uploadOutput.toString()}</p>
+              )}
+            </div>
           </div>
           <div className={styles.card}>
             <h3>Live Camera Stream</h3>
@@ -200,10 +209,13 @@ export default function Home() {
               <canvas ref={canvasRef} className={styles.video} />
             )}
             {returnType === 'logs' && (
-              <div className={styles.logContainer}>
-                {logs.map((log, index) => (
-                  <p key={index}>{log}</p>
-                ))}
+              <div className={styles.outputCard}>
+                <h3>Stream Output</h3>
+                <textarea
+                  className={styles.logTextarea}
+                  value={logs.join('\n')}
+                  readOnly
+                />
               </div>
             )}
             {!isStreaming && (
