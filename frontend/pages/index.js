@@ -4,14 +4,16 @@ import { useRef, useEffect, useState } from 'react';
 
 export default function Home() {
   const canvasRef = useRef(null);
-  const videoRef = useRef(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [returnType, setReturnType] = useState('annotated_stream');
+  const [logs, setLogs] = useState([]);
 
   useEffect(() => {
     return () => {
       stopStream();
     };
   }, []);
+
   const startStream = async () => {
     try {
       console.log('Starting stream...');
@@ -22,6 +24,7 @@ export default function Home() {
         device: 'cpu',
         show_detected: true,
         show_skeleton: true,
+        return_type: returnType,
       };
       const url = 'http://localhost:8000/stream';
       const queryString = Object.entries(params)
@@ -32,36 +35,65 @@ export default function Home() {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      console.log('Creating a window to display the video stream...');
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        throw new Error('Canvas element not found.');
-      }
+      console.log('Creating a window to display the stream...');
       setIsStreaming(true);
-      const ctx = canvas.getContext('2d');
-      let jpg = new Uint8Array();
-      let frameCount = 0;
-      const reader = response.body.getReader();
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        jpg = new Uint8Array([...jpg, ...value]);
-        let a = jpg.findIndex((val, i) => val === 0xff && jpg[i + 1] === 0xd8);
-        let b = jpg.findIndex((val, i) => val === 0xff && jpg[i + 1] === 0xd9);
-        if (a !== -1 && b !== -1) {
-          const frameData = jpg.slice(a, b + 2);
-          jpg = jpg.slice(b + 2);
-          const blob = new Blob([frameData], { type: 'image/jpeg' });
-          const frame = await createImageBitmap(blob);
-          if (frame) {
-            console.log(`Displaying frame ${frameCount} with size: ${frame.width}x${frame.height}...`);
-            canvas.width = frame.width;
-            canvas.height = frame.height;
-            ctx.drawImage(frame, 0, 0);
-            frameCount++;
-          } else {
-            console.log('Failed to decode JPEG frame.');
+
+      if (returnType === 'annotated_stream') {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+          throw new Error('Canvas element not found.');
+        }
+        const ctx = canvas.getContext('2d');
+        let jpg = new Uint8Array();
+        let frameCount = 0;
+        const reader = response.body.getReader();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          jpg = new Uint8Array([...jpg, ...value]);
+          let a = jpg.findIndex((val, i) => val === 0xff && jpg[i + 1] === 0xd8);
+          let b = jpg.findIndex((val, i) => val === 0xff && jpg[i + 1] === 0xd9);
+          if (a !== -1 && b !== -1) {
+            const frameData = jpg.slice(a, b + 2);
+            jpg = jpg.slice(b + 2);
+            const blob = new Blob([frameData], { type: 'image/jpeg' });
+            const frame = await createImageBitmap(blob);
+            if (frame) {
+              console.log(`Displaying frame ${frameCount} with size: ${frame.width}x${frame.height}...`);
+              canvas.width = frame.width;
+              canvas.height = frame.height;
+              ctx.drawImage(frame, 0, 0);
+              frameCount++;
+            } else {
+              console.log('Failed to decode JPEG frame.');
+            }
           }
+        }
+      } else if (returnType === 'logs') {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let logText = '';
+        
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          
+          const decodedValue = decoder.decode(value);
+          logText += decodedValue;
+          
+          // Split the logs into individual lines
+          const logLines = logText.split('\n');
+          
+          // Update the logs state with the new lines
+          setLogs((prevLogs) => [...prevLogs, ...logLines.slice(0, -1)]);
+          
+          // Keep the last line in the logText variable, as it may be incomplete
+          logText = logLines[logLines.length - 1];
+        }
+        
+        // Update the logs state with any remaining log text
+        if (logText.trim() !== '') {
+          setLogs((prevLogs) => [...prevLogs, logText]);
         }
       }
       console.log('Stream started successfully');
@@ -73,11 +105,8 @@ export default function Home() {
   };
 
   const stopStream = () => {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.src = '';
-      setIsStreaming(false);
-    }
+    setIsStreaming(false);
+    setLogs([]);
   };
 
   const handleUpload = async (event) => {
@@ -139,10 +168,27 @@ export default function Home() {
           <div className={styles.card}>
             <h3>Live Camera Stream</h3>
             <p>
-              Click the "Start Stream" button to start the live camera stream.
+              Select the return type and click the "Start Stream" button to start the live camera stream.
               Click "Stop Stream" to stop the stream.
             </p>
-            <canvas ref={canvasRef} className={styles.video} />
+            <select
+              value={returnType}
+              onChange={(e) => setReturnType(e.target.value)}
+              className={styles.select}
+            >
+              <option value="annotated_stream">Annotated Stream</option>
+              <option value="logs">Logs</option>
+            </select>
+            {returnType === 'annotated_stream' && (
+              <canvas ref={canvasRef} className={styles.video} />
+            )}
+            {returnType === 'logs' && (
+              <div className={styles.logContainer}>
+                {logs.map((log, index) => (
+                  <p key={index}>{log}</p>
+                ))}
+              </div>
+            )}
             {!isStreaming && (
               <button onClick={startStream} className={styles.button}>
                 Start Stream
