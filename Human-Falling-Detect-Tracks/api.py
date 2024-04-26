@@ -1,4 +1,5 @@
 import argparse
+from io import BytesIO
 import os
 import cv2
 import time
@@ -91,7 +92,7 @@ def print_section_times(sections, section_times, start_time):
 
 
 @app.post("/process_video_with_gemini")
-async def process_video_with_gemini(file: UploadFile = File(...)):
+async def process_video_with_gemini(file_contents: bytes = File(...)):
     start_time = time.time()
     section_times = []
     section_times.append(time.time())  # Mark end of initialization
@@ -101,7 +102,8 @@ async def process_video_with_gemini(file: UploadFile = File(...)):
 
     # Save the uploaded video to a temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
-        temp_file.write(await file.read())
+        temp_file.write(file_contents)
+        temp_file.flush()
         video_path = temp_file.name
 
     # Open the video file
@@ -516,6 +518,19 @@ def process_stream(
         # Clear resource.
         cam.stop()
 
+def create_video_from_frames(frames, output_path, fps=30):
+    if len(frames) == 0:
+        return None
+
+    height, width, _ = frames[0].shape
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    for frame in frames:
+        video_writer.write(frame)
+
+    video_writer.release()
+    return output_path
 
 @app.get("/stream")
 async def stream(request: Request):
@@ -568,7 +583,6 @@ async def stream(request: Request):
     elif return_type == "logs":
         return StreamingResponse(stream_generator, media_type="text/plain")
 
-
 @app.post("/trace_video")
 async def trace_video(
     file: UploadFile = File(...),
@@ -596,12 +610,43 @@ async def trace_video(
     elif return_type == "fall_detection":
         # Process the video and return the detected falls
         result = process_video(video_path, None, return_type)
-        with open("detected_falls.txt", "w") as file:
-            file.write(str(result))
-        return FileResponse(
-            "detected_falls.txt", media_type="text/plain", filename="detected_falls.txt"
-        )
+        detected_falls = result["detected_falls"]
 
+        # Load the video file
+        video = cv2.VideoCapture(video_path)
+
+        # Extract frames where falls are detected
+        fall_frames = []
+        frame_count = 0
+        while True:
+            ret, frame = video.read()
+            if not ret:
+                break
+            if frame_count in detected_falls:
+                fall_frames.append(frame)
+            frame_count += 1
+
+        video.release()
+
+        # Create a temporary file for the fall detection video
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+            fall_video_path = temp_file.name
+
+        # Create a video from the fall frames
+        fall_video_path = create_video_from_frames(fall_frames, fall_video_path)
+
+    if fall_video_path:
+        # Open the fall detection video file
+        with open(fall_video_path, "rb") as file:
+            # Create an UploadFile object from the file
+            file_contents = file.read()
+
+        
+        # Pass the fall detection video to the process_with_gemini function
+        response = await process_video_with_gemini(file_contents)
+        return response
+    else:
+        return "No falls detected in the video."
 
 if __name__ == "__main__":
     import uvicorn
