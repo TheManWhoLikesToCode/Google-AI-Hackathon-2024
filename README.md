@@ -1,5 +1,8 @@
 # Google-AI-Hackathon-2024
-My Google AI Hackathon 2024 Submission
+Google AI Hackathon 2024 Submission
+
+AI-powered fall detection for enhanced elderly care and peace of mind.
+
 
 
 # To Run

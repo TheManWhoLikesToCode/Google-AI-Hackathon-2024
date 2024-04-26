@@ -8,7 +8,7 @@ import numpy as np
 import tempfile
 import shutil
 from fastapi import FastAPI, File, UploadFile, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from config import generation_config, safety_settings
 import google.generativeai as genai
@@ -351,22 +351,18 @@ async def trace_video(file: UploadFile = File(...)):
     return FileResponse(
         output_path, media_type="video/mp4", filename="traced_video.mp4"
     )
-
-
-def process_stream( cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton, return_type, timeout ): 
+    
+async def process_stream(
+    camera_feed,
+    inp_dets,
+    inp_pose,
+    device,
+    show_detected,
+    show_skeleton,
+    return_type,
+    timeout,
+):
     resize_fn = ResizePadding(inp_dets, inp_dets)
-
-    if type(cam_source) is str and os.path.isfile(cam_source):
-        # Use loader thread with Q for video file.
-        cam = CamLoader_Q(
-            cam_source, queue_size=1000, preprocess=lambda x: preproc(x, resize_fn)
-        ).start()
-    else:
-        # Use normal thread loader for webcam.
-        cam = CamLoader(
-            cam_source if isinstance(cam_source, str) else int(cam_source),
-            preprocess=lambda x: preproc(x, resize_fn),
-        ).start()
 
     try:
         # DETECTION MODEL.
@@ -386,10 +382,16 @@ def process_stream( cam_source, inp_dets, inp_pose, device, show_detected, show_
         f = 0
         start_time = time.time()
         logs = []
-        while cam.grabbed() and time.time() - start_time < timeout:
+        while time.time() - start_time < timeout:
             f += 1
-            frame = cam.getitem()
+            # Decode the camera feed bytes into a numpy array
+            frame = cv2.imdecode(np.frombuffer(camera_feed, np.uint8), cv2.IMREAD_COLOR)
+            if frame is None:
+                break
             image = frame.copy()
+
+            # Preprocess the frame
+            frame = preproc(frame, resize_fn)
 
             # Detect humans bbox in the frame with detector model.
             detected = detect_model.detect(frame, need_resize=False, expand_bb=10)
@@ -515,16 +517,14 @@ def process_stream( cam_source, inp_dets, inp_pose, device, show_detected, show_
                 yield log_text
 
     finally:
-        # Clear resource.
-        cam.stop()
+        # Clear resources if needed
+        pass
 
-
-@app.get("/stream")
+@app.post("/stream")
 async def stream(request: Request):
     print("Received request for /stream endpoint")
 
-    cam_source = int(request.query_params.get("camera", 0))
-    print(f"Camera source: {cam_source}")
+    camera_feed = await request.body()
 
     inp_dets = int(request.query_params.get("detection_input_size", 384))
     print(f"Detection input size: {inp_dets}")
@@ -551,18 +551,30 @@ async def stream(request: Request):
     print(f"Timeout: {timeout} seconds")
 
     print("Starting to process the stream...")
-    stream_generator = process_stream(
-        cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton, return_type, timeout
-    )
-
-    if return_type == "annotated_stream":
-        return StreamingResponse(
-            stream_generator,
-            media_type="multipart/x-mixed-replace;boundary=frame",
+    try:
+        stream_generator = process_stream(
+            camera_feed, inp_dets, inp_pose, device, show_detected, show_skeleton, return_type, timeout
         )
-    elif return_type == "logs":
-        return StreamingResponse(stream_generator, media_type="text/plain")
 
+        print("Stream processing completed")
+
+        if return_type == "annotated_stream":
+            print("Returning annotated stream")
+            return StreamingResponse(
+                stream_generator,
+                media_type="multipart/x-mixed-replace;boundary=frame",
+            )
+        elif return_type == "logs":
+            print("Returning logs")
+            return StreamingResponse(stream_generator, media_type="text/plain")
+    except Exception as e:
+        print(f"Error processing stream: {str(e)}")
+        # Handle the exception or return an appropriate response
+        return JSONResponse(
+            status_code=500,
+            content={"error": "An error occurred while processing the stream."},
+        )
+        
 if __name__ == "__main__":
     import uvicorn
     import argparse

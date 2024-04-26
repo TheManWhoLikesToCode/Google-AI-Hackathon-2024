@@ -12,11 +12,28 @@ export default function Home() {
       stopStream();
     };
   }, []);
+
   const startStream = async () => {
     try {
       console.log('Starting stream...');
+
+      // Access the user's webcam
+      console.log('Accessing user\'s webcam...');
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      console.log('User\'s webcam accessed successfully');
+      videoRef.current.srcObject = stream; // Set the video source to the obtained stream
+      setIsStreaming(true);
+
+      // Set up the canvas to display the video stream
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        throw new Error('Canvas element not found.');
+      }
+      const ctx = canvas.getContext('2d');
+
+      // Start streaming the video to the server
+      console.log('Streaming video to the server...');
       const params = {
-        camera: 0,
         detection_input_size: 384,
         pose_input_size: '224x160',
         device: 'cpu',
@@ -27,32 +44,43 @@ export default function Home() {
       const queryString = Object.entries(params)
         .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
         .join('&');
-      const response = await fetch(`${url}?${queryString}`, { mode: 'cors' });
+
+      const response = await fetch(`${url}?${queryString}`, {
+        method: 'POST',
+        body: stream,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+        },
+        mode: 'cors',
+      });
+
       console.log('Response status code:', response.status);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      console.log('Server response received successfully');
       console.log('Creating a window to display the video stream...');
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        throw new Error('Canvas element not found.');
-      }
-      setIsStreaming(true);
-      const ctx = canvas.getContext('2d');
       let jpg = new Uint8Array();
       let frameCount = 0;
       const reader = response.body.getReader();
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+
         jpg = new Uint8Array([...jpg, ...value]);
+
         let a = jpg.findIndex((val, i) => val === 0xff && jpg[i + 1] === 0xd8);
         let b = jpg.findIndex((val, i) => val === 0xff && jpg[i + 1] === 0xd9);
+
         if (a !== -1 && b !== -1) {
           const frameData = jpg.slice(a, b + 2);
           jpg = jpg.slice(b + 2);
+
           const blob = new Blob([frameData], { type: 'image/jpeg' });
           const frame = await createImageBitmap(blob);
+
           if (frame) {
             console.log(`Displaying frame ${frameCount} with size: ${frame.width}x${frame.height}...`);
             canvas.width = frame.width;
@@ -64,18 +92,22 @@ export default function Home() {
           }
         }
       }
+
       console.log('Stream started successfully');
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error starting the stream:', error);
     } finally {
-      console.log('Closing the stream...');
+      console.log('Stream setup completed');
     }
   };
 
   const stopStream = () => {
     if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.src = '';
+      const stream = videoRef.current.srcObject;
+      if (stream) {
+        const tracks = stream.getTracks();
+        tracks.forEach((track) => track.stop());
+      }
       setIsStreaming(false);
     }
   };
@@ -142,6 +174,7 @@ export default function Home() {
               Click the "Start Stream" button to start the live camera stream.
               Click "Stop Stream" to stop the stream.
             </p>
+            <video ref={videoRef} className={styles.video} autoPlay playsInline />
             <canvas ref={canvasRef} className={styles.video} />
             {!isStreaming && (
               <button onClick={startStream} className={styles.button}>
