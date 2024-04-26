@@ -114,20 +114,27 @@ export default function Home() {
     const file = event.target.files[0];
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('return_type', uploadReturnType);
-
+    console.log('Returning:', uploadReturnType);
+  
     try {
-      const response = await fetch('http://localhost:8000/trace_video', {
+      const response = await fetch(`http://localhost:8000/trace_video?return_type=${uploadReturnType}`, {
         method: 'POST',
         body: formData,
         mode: 'cors',
       });
-
+  
       if (response.ok) {
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        // Open the traced video in a new window or display it as needed
-        window.open(url, '_blank');
+        if (uploadReturnType === 'annotated_video') {
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          // Open the traced video in a new window or display it as needed
+          window.open(url, '_blank');
+        } else if (uploadReturnType === 'fall_detection') {
+          const text = await response.text();
+          // Display the detected falls or perform any desired action with the text response
+          console.log('Detected falls:', text);
+          // You can update the UI or perform any other actions based on the response
+        }
       } else {
         console.error('Error uploading file:', response.statusText);
       }

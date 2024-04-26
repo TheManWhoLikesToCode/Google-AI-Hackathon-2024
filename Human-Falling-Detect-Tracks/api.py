@@ -7,7 +7,7 @@ import logging
 import numpy as np
 import tempfile
 import shutil
-from fastapi import FastAPI, File, UploadFile, Request
+from fastapi import FastAPI, File, Query, UploadFile, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from config import generation_config, safety_settings
@@ -571,7 +571,8 @@ async def stream(request: Request):
 
 @app.post("/trace_video")
 async def trace_video(
-    file: UploadFile = File(...), return_type: str = "annotated_video"
+    file: UploadFile = File(...),
+    return_type: str = Query("annotated_video", description="Return type for the processed video")
 ):
     # Get the current working directory
     current_dir = os.getcwd()
