@@ -154,7 +154,7 @@ async def process_video_with_gemini(file: UploadFile = File(...)):
 
     image_parts = []
     for i in range(len(selected_frames)):
-        image_data = cv2.imencode('.png', selected_frames[i])[1].tobytes()
+        image_data = cv2.imencode(".png", selected_frames[i])[1].tobytes()
         image_part = {"mime_type": "image/png", "data": image_data}
         image_parts.append(image_part)
 
@@ -189,8 +189,9 @@ async def process_video_with_gemini(file: UploadFile = File(...)):
 
     return response.text if response else None
 
-def process_video(video_path, output_video_path):
-    device = "cpu"  # or 'cpu'
+
+def process_video(video_path, output_video_path, return_type):
+    device = "cpu"  # or 'cuda'
 
     # DETECTION MODEL.
     inp_dets = 384
@@ -224,11 +225,15 @@ def process_video(video_path, output_video_path):
             preprocess=lambda x: preproc(x, resize_fn),
         ).start()
 
-    codec = cv2.VideoWriter_fourcc(*"avc1")
-    writer = cv2.VideoWriter(output_video_path, codec, 30, (inp_dets, inp_dets))
+    if return_type == "annotated_video":
+        codec = cv2.VideoWriter_fourcc(*"avc1")
+        writer = cv2.VideoWriter(output_video_path, codec, 30, (inp_dets, inp_dets))
+    else:
+        writer = None
 
     fps_time = 0
     f = 0
+    detected_falls = []
     while cam.grabbed():
         f += 1
         frame = cam.getitem()
@@ -287,73 +292,64 @@ def process_video(video_path, output_video_path):
                 action_name = action_model.class_names[out[0].argmax()]
                 action = "{}: {:.2f}%".format(action_name, out[0].max() * 100)
 
-                # Log the user event
-                logging.info(f"User {track_id}: {action_name}")
-
                 if action_name == "Fall Down":
                     clr = (255, 0, 0)
+                    detected_falls.append(f)
                 elif action_name == "Lying Down":
                     clr = (255, 200, 0)
 
             # VISUALIZE.
             if track.time_since_update == 0:
-                if True:  # Set to True to show skeleton
-                    frame = draw_single(frame, track.keypoints_list[-1])
-                frame = cv2.rectangle(
-                    frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 1
-                )
-                frame = cv2.putText(
-                    frame,
-                    str(track_id),
-                    (center[0], center[1]),
-                    cv2.FONT_HERSHEY_COMPLEX,
-                    0.4,
-                    (255, 0, 0),
-                    2,
-                )
-                frame = cv2.putText(
-                    frame,
-                    action,
-                    (bbox[0] + 5, bbox[1] + 15),
-                    cv2.FONT_HERSHEY_COMPLEX,
-                    0.4,
-                    clr,
-                    1,
-                )
+                if return_type == "annotated_video":
+                    if True:  # Set to True to show skeleton
+                        frame = draw_single(frame, track.keypoints_list[-1])
+                    frame = cv2.rectangle(
+                        frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 1
+                    )
+                    frame = cv2.putText(
+                        frame,
+                        str(track_id),
+                        (center[0], center[1]),
+                        cv2.FONT_HERSHEY_COMPLEX,
+                        0.4,
+                        (255, 0, 0),
+                        2,
+                    )
+                    frame = cv2.putText(
+                        frame,
+                        action,
+                        (bbox[0] + 5, bbox[1] + 15),
+                        cv2.FONT_HERSHEY_COMPLEX,
+                        0.4,
+                        clr,
+                        1,
+                    )
 
-        frame = cv2.resize(frame, (inp_dets, inp_dets))
-        writer.write(frame)
+        if return_type == "annotated_video":
+            frame = cv2.resize(frame, (inp_dets, inp_dets))
+            writer.write(frame)
 
     # Clear resource.
     cam.stop()
-    writer.release()
+    if writer is not None:
+        writer.release()
+
+    if return_type == "fall_detection":
+        return {"detected_falls": detected_falls}
+    else:
+        return None
 
 
-@app.post("/trace_video")
-async def trace_video(file: UploadFile = File(...)):
-    # Get the current working directory
-    current_dir = os.getcwd()
-
-    # Create a file path to store the uploaded video in the current working directory
-    video_path = os.path.join(current_dir, "uploaded_video.mp4")
-
-    # Save the uploaded video to the file path
-    with open(video_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # Create a file path to store the output video in the current working directory
-    output_path = os.path.join(current_dir, "traced_video.mp4")
-
-    # Process the video and generate the traced output video file
-    process_video(video_path, output_path)
-
-    # Return the traced video file as a response
-    return FileResponse(
-        output_path, media_type="video/mp4", filename="traced_video.mp4"
-    )
-
-
-def process_stream( cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton, return_type, timeout ): 
+def process_stream(
+    cam_source,
+    inp_dets,
+    inp_pose,
+    device,
+    show_detected,
+    show_skeleton,
+    return_type,
+    timeout,
+):
     resize_fn = ResizePadding(inp_dets, inp_dets)
 
     if type(cam_source) is str and os.path.isfile(cam_source):
@@ -508,7 +504,9 @@ def process_stream( cam_source, inp_dets, inp_pose, device, show_detected, show_
                 _, encoded_frame = cv2.imencode(".jpg", frame)
                 yield (
                     b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + encoded_frame.tobytes() + b"\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
+                    + encoded_frame.tobytes()
+                    + b"\r\n"
                 )
             elif return_type == "logs":
                 log_text = "\n".join(logs)
@@ -552,7 +550,14 @@ async def stream(request: Request):
 
     print("Starting to process the stream...")
     stream_generator = process_stream(
-        cam_source, inp_dets, inp_pose, device, show_detected, show_skeleton, return_type, timeout
+        cam_source,
+        inp_dets,
+        inp_pose,
+        device,
+        show_detected,
+        show_skeleton,
+        return_type,
+        timeout,
     )
 
     if return_type == "annotated_stream":
@@ -562,6 +567,40 @@ async def stream(request: Request):
         )
     elif return_type == "logs":
         return StreamingResponse(stream_generator, media_type="text/plain")
+
+
+@app.post("/trace_video")
+async def trace_video(
+    file: UploadFile = File(...), return_type: str = "annotated_video"
+):
+    # Get the current working directory
+    current_dir = os.getcwd()
+
+    # Create a file path to store the uploaded video in the current working directory
+    video_path = os.path.join(current_dir, "uploaded_video.mp4")
+
+    # Save the uploaded video to the file path
+    with open(video_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    if return_type == "annotated_video":
+        # Create a file path to store the output video in the current working directory
+        output_path = os.path.join(current_dir, "traced_video.mp4")
+        # Process the video and generate the traced output video file
+        process_video(video_path, output_path, return_type)
+        # Return the traced video file as a response
+        return FileResponse(
+            output_path, media_type="video/mp4", filename="traced_video.mp4"
+        )
+    elif return_type == "fall_detection":
+        # Process the video and return the detected falls
+        result = process_video(video_path, None, return_type)
+        with open("detected_falls.txt", "w") as file:
+            file.write(str(result))
+        return FileResponse(
+            "detected_falls.txt", media_type="text/plain", filename="detected_falls.txt"
+        )
+
 
 if __name__ == "__main__":
     import uvicorn

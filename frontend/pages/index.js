@@ -6,6 +6,7 @@ export default function Home() {
   const canvasRef = useRef(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [returnType, setReturnType] = useState('annotated_stream');
+  const [uploadReturnType, setUploadReturnType] = useState('annotated_video');
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
@@ -73,24 +74,24 @@ export default function Home() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let logText = '';
-        
+
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
-          
+
           const decodedValue = decoder.decode(value);
           logText += decodedValue;
-          
+
           // Split the logs into individual lines
           const logLines = logText.split('\n');
-          
+
           // Update the logs state with the new lines
           setLogs((prevLogs) => [...prevLogs, ...logLines.slice(0, -1)]);
-          
+
           // Keep the last line in the logText variable, as it may be incomplete
           logText = logLines[logLines.length - 1];
         }
-        
+
         // Update the logs state with any remaining log text
         if (logText.trim() !== '') {
           setLogs((prevLogs) => [...prevLogs, logText]);
@@ -113,6 +114,7 @@ export default function Home() {
     const file = event.target.files[0];
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('return_type', uploadReturnType);
 
     try {
       const response = await fetch('http://localhost:8000/trace_video', {
@@ -155,6 +157,14 @@ export default function Home() {
           <div className={styles.card}>
             <h3>Upload File</h3>
             <p>Click the button below to upload a video file:</p>
+            <select
+              value={uploadReturnType}
+              onChange={(e) => setUploadReturnType(e.target.value)}
+              className={styles.select}
+            >
+              <option value="annotated_video">Annotated Video</option>
+              <option value="fall_detection">Fall Detection</option>
+            </select>
             <label htmlFor="fileInput" className={styles.button}>
               Choose File
               <input
