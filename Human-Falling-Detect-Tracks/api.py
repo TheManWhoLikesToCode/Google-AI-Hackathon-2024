@@ -340,9 +340,8 @@ def process_video(video_path, output_video_path, return_type):
         return {"detected_falls": detected_falls}
     else:
         return None
-
-
-def process_stream(
+    
+async def process_stream(
     cam_source,
     inp_dets,
     inp_pose,
@@ -384,6 +383,10 @@ def process_stream(
         f = 0
         start_time = time.time()
         logs = []
+        fall_frames = []
+        frame_buffer = []
+        buffer_size = 30  # Number of frames to store before and after the fall
+
         while cam.grabbed() and time.time() - start_time < timeout:
             f += 1
             frame = cam.getitem()
@@ -458,6 +461,8 @@ def process_stream(
 
                     if action_name == "Fall Down":
                         clr = (255, 0, 0)
+                        fall_frames.extend(frame_buffer)  # Add buffered frames to fall_frames
+                        fall_frames.append(frame)  # Add current frame to fall_frames
                     elif action_name == "Lying Down":
                         clr = (255, 200, 0)
 
@@ -501,6 +506,11 @@ def process_stream(
             frame = frame[:, :, ::-1]
             fps_time = time.time()
 
+            # Add current frame to the buffer
+            frame_buffer.append(frame)
+            if len(frame_buffer) > buffer_size:
+                frame_buffer.pop(0)  # Remove the oldest frame if buffer is full
+
             if return_type == "annotated_stream":
                 # Convert frame to JPEG format
                 _, encoded_frame = cv2.imencode(".jpg", frame)
@@ -513,6 +523,24 @@ def process_stream(
             elif return_type == "logs":
                 log_text = "\n".join(logs)
                 yield log_text
+
+        if return_type == "logs" and len(fall_frames) > 0:
+            # Create a temporary file for the fall detection video
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+                fall_video_path = temp_file.name
+
+            # Create a video from the fall frames
+            fall_video_path = create_video_from_frames(fall_frames, fall_video_path)
+
+            if fall_video_path:
+                # Open the fall detection video file
+                with open(fall_video_path, "rb") as file:
+                    # Create an UploadFile object from the file
+                    file_contents = file.read()
+
+                # Pass the fall detection video to the process_with_gemini function
+                response = await process_video_with_gemini(file_contents)
+                yield response
 
     finally:
         # Clear resource.
