@@ -10,6 +10,7 @@ export default function Home() {
   const [logs, setLogs] = useState([]);
   const [streamOutput, setStreamOutput] = useState(null);
   const [uploadOutput, setUploadOutput] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -20,6 +21,8 @@ export default function Home() {
   const startStream = async () => {
     try {
       console.log('Starting stream...');
+      alert('Starting the camera stream...');
+      setIsLoading(true);
       const params = {
         camera: 0,
         detection_input_size: 384,
@@ -43,6 +46,7 @@ export default function Home() {
 
       if (returnType === 'annotated_stream') {
         const canvas = canvasRef.current;
+        console.log('Canvas element:', canvas);
         if (!canvas) {
           throw new Error('Canvas element not found.');
         }
@@ -101,45 +105,78 @@ export default function Home() {
         }
       }
       console.log('Stream started successfully');
+      alert('Camera stream started successfully!');
     } catch (error) {
       console.error('Error:', error);
+      alert('An error occurred while starting the camera stream. Please try again.');
     } finally {
       console.log('Closing the stream...');
+      setIsLoading(false);
     }
   };
 
-  const stopStream = () => {
-    setIsStreaming(false);
-    setLogs([]);
-    setStreamOutput(null);
-  };
-  const handleUpload = async (event) => {
-    const file = event.target.files[0];
-    const formData = new FormData();
-    formData.append('file', file);
-    console.log('Returning:', uploadReturnType);
-
+  const stopStream = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/trace_video?return_type=${uploadReturnType}`, {
+      const response = await fetch('http://localhost:8000/stop_stream', {
         method: 'POST',
-        body: formData,
         mode: 'cors',
       });
 
       if (response.ok) {
-        if (uploadReturnType === 'annotated_video') {
-          const blob = await response.blob();
-          const url = URL.createObjectURL(blob);
-          setUploadOutput(url);
-        } else if (uploadReturnType === 'fall_detection') {
-          const isFalling = await response.json();
-          setUploadOutput(isFalling);
-        }
+        setIsStreaming(false);
+        setLogs([]);
+        setStreamOutput(null);
+        alert('Camera stream stopped.');
       } else {
-        console.error('Error uploading file:', response.statusText);
+        console.error('Error stopping stream:', response.statusText);
+        alert('An error occurred while stopping the camera stream. Please try again.');
       }
     } catch (error) {
-      console.error('Error uploading file:', error);
+      console.error('Error stopping stream:', error);
+      alert('An error occurred while stopping the camera stream. Please try again.');
+    }
+  };
+
+  const handleUpload = async (event) => {
+    const file = event.target.files[0];
+
+    if (file) {
+      const formData = new FormData();
+      formData.append('file', file);
+      console.log('Returning:', uploadReturnType);
+      alert('Uploading the video file...');
+      setIsLoading(true);
+
+      try {
+        const response = await fetch(`http://localhost:8000/trace_video?return_type=${uploadReturnType}`, {
+          method: 'POST',
+          body: formData,
+          mode: 'cors',
+        });
+
+        if (response.ok) {
+          if (uploadReturnType === 'annotated_video') {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            setUploadOutput(url);
+            alert('Annotated video generated successfully!');
+          } else if (uploadReturnType === 'fall_detection') {
+            const isFalling = await response.json();
+            setUploadOutput(isFalling);
+            alert(`Fall detection result: ${isFalling}`);
+          }
+        } else {
+          console.error('Error uploading file:', response.statusText);
+          alert('An error occurred while uploading the video file. Please try again.');
+        }
+      } catch (error) {
+        console.error('Error uploading file:', error);
+        alert('An error occurred while uploading the video file. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      alert('No file selected. Please choose a video file to upload.');
     }
   };
 
@@ -158,78 +195,87 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <main>
-        <h1 className={styles.title}>SafeSteps</h1>
-        <h2 className={styles.h1}>Where every second matters</h2>
-        <div className={styles.grid}>
-          <div className={styles.card}>
-            <h3>Upload File</h3>
-            <p>Click the button below to upload a video file:</p>
-            <select
-              value={uploadReturnType}
-              onChange={(e) => setUploadReturnType(e.target.value)}
-              className={styles.select}
-            >
-              <option value="annotated_video">Annotated Video</option>
-              <option value="fall_detection">Fall Detection</option>
-            </select>
-            <label htmlFor="fileInput" className={styles.button}>
-              Choose File
-              <input
-                id="fileInput"
-                type="file"
-                onChange={handleUpload}
-                style={{ display: 'none' }}
-              />
-            </label>
-            <div className={styles.outputCard}>
-              <h3>Upload Output</h3>
-              {uploadOutput !== null && uploadReturnType === 'annotated_video' && (
-                <video src={uploadOutput} controls className={styles.outputVideo} />
-              )}
-              {uploadOutput !== null && uploadReturnType === 'fall_detection' && (
-                <p>{uploadOutput.toString()}</p>
-              )}
-            </div>
+        {isLoading ? (
+          <div className={styles.loadingScreen}>
+            <h2>Loading...</h2>
+            <div className={styles.spinner}></div>
           </div>
-          <div className={styles.card}>
-            <h3>Live Camera Stream</h3>
-            <p>
-              Select the return type and click the "Start Stream" button to start the live camera stream.
-              Click "Stop Stream" to stop the stream.
-            </p>
-            <select
-              value={returnType}
-              onChange={(e) => setReturnType(e.target.value)}
-              className={styles.select}
-            >
-              <option value="annotated_stream">Annotated Stream</option>
-              <option value="logs">Logs</option>
-            </select>
-            {returnType === 'annotated_stream' && (
-              <canvas ref={canvasRef} className={styles.video} />
-            )}
-            {returnType === 'logs' && (
-              <div className={styles.outputCard}>
-                <h3>Stream Output</h3>
-                <textarea
-                  className={styles.logTextarea}
-                  value={logs.join('\n')}
-                  readOnly
-                />
+        ) : (
+          <>
+            <h1 className={styles.title}>SafeSteps</h1>
+            <h2 className={styles.h1}>Where every second matters</h2>
+            <div className={styles.grid}>
+              <div className={styles.card}>
+                <h3>Upload File</h3>
+                <p>Click the button below to upload a video file:</p>
+                <select
+                  value={uploadReturnType}
+                  onChange={(e) => setUploadReturnType(e.target.value)}
+                  className={styles.select}
+                >
+                  <option value="annotated_video">Annotated Video</option>
+                  <option value="fall_detection">Fall Detection</option>
+                </select>
+                <label htmlFor="fileInput" className={styles.button}>
+                  Choose File
+                  <input
+                    id="fileInput"
+                    type="file"
+                    onChange={handleUpload}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+                <div className={styles.outputCard}>
+                  <h3>Upload Output</h3>
+                  {uploadOutput !== null && uploadReturnType === 'annotated_video' && (
+                    <video src={uploadOutput} controls className={styles.outputVideo} />
+                  )}
+                  {uploadOutput !== null && uploadReturnType === 'fall_detection' && (
+                    <p>{uploadOutput.toString()}</p>
+                  )}
+                </div>
               </div>
-            )}
-            {!isStreaming && (
-              <button onClick={startStream} className={styles.button}>
-                Start Stream
-              </button>
-            )}
-            {isStreaming && (
-              <button onClick={stopStream} className={styles.button}>
-                Stop Stream
-              </button>
-            )}
-          </div>
-        </div>
+              <div className={styles.card}>
+                <h3>Live Camera Stream</h3>
+                <p>
+                  Select the return type and click the "Start Stream" button to start the live camera stream.
+                  Click "Stop Stream" to stop the stream.
+                </p>
+                <select
+                  value={returnType}
+                  onChange={(e) => setReturnType(e.target.value)}
+                  className={styles.select}
+                >
+                  <option value="annotated_stream">Annotated Stream</option>
+                  <option value="logs">Logs</option>
+                </select>
+                {returnType === 'annotated_stream' && (
+                  <canvas ref={canvasRef} className={styles.video} />
+                )}
+                {returnType === 'logs' && (
+                  <div className={styles.outputCard}>
+                    <h3>Stream Output</h3>
+                    <textarea
+                      className={styles.logTextarea}
+                      value={logs.join('\n')}
+                      readOnly
+                    />
+                  </div>
+                )}
+                {!isStreaming && (
+                  <button onClick={startStream} className={styles.button}>
+                    Start Stream
+                  </button>
+                )}
+                {isStreaming && (
+                  <button onClick={stopStream} className={styles.button}>
+                    Stop Stream
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </main>
       <footer>
         <a

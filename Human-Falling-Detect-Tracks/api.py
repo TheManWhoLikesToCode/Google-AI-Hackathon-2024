@@ -35,6 +35,8 @@ orgins = [
 ]
 
 
+stream_running = True
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=orgins,
@@ -384,7 +386,7 @@ def process_stream(
         f = 0
         start_time = time.time()
         logs = []
-        while cam.grabbed() and time.time() - start_time < timeout:
+        while cam.grabbed() and time.time() - start_time < timeout and stream_running:
             f += 1
             frame = cam.getitem()
             image = frame.copy()
@@ -647,6 +649,13 @@ async def trace_video(
         return response
     else:
         return "No falls detected in the video."
+
+
+@app.post("/stop_stream")
+async def stop_stream():
+    global stream_running
+    stream_running = False
+    return {"message": "Stream stopped"}
 
 if __name__ == "__main__":
     import uvicorn
