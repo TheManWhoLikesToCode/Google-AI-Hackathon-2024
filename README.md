@@ -33,6 +33,10 @@ To run this program, follow these steps:
   - Install the dependencies:
     - Run `npm install`
   - Run `npm run dev`
+  
+## Help
+
+If that doesn't work I included my conda env to help troubleshoot good luck 🙌🏿
 
 ## Sources
 
