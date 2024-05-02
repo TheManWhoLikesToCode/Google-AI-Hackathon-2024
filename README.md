@@ -1,30 +1,42 @@
 # Google-AI-Hackathon-2024
+
 My Google AI Hackathon 2024 Submission
 
+## To Run
 
-# To Run
+**Disclaimer:** Developed and Tested on a Mac
 
-To run the human falling detection you have 3 options
+To run this program, follow these steps:
 
-main.py
-To run main.py 
-CD into Human-Falling_Detect-Tracks
+1. Clone the Repository
 
-run
-python main.py -C {Insert Camera} 
+2. Download the models (These are too large to upload to GitHub)
+  - [Download Link Here](https://drive.google.com/file/d/1eqdhpQhnmNG3TYQ_aunga7S9F2_8Ucug/view?usp=sharing)
+  - Move the models to their folders:
+    - Navigate to the `backend` folder
+    - Navigate to the `Models` folder
+    - Copy the `sppe` folder to the `sppe` folder
+    - Copy the `TSSTG` folder to the `TSSTG` folder
+    - Copy the `yolo` folder to the `yolo-tiny-onecls` folder
 
-my default camera is 0
+3. Install the requirements
+  - Navigate to the `backend` folder (`cd backend`)
+  - Run `pip install -r requirements.txt`
 
+4. Run Main
+  - Run `python main.py`
 
-To run and hit the API endpoint
-api.py
-python api.py
-stream.py
-python stream.py
+5. Install the dependencies
+  - Navigate to the `frontend` folder
 
-# Sources
+6. Start the frontend
+  - Install the dependencies:
+    - Run `npm install`
+  - Run `npm run dev`
 
-- **@GajuuzZ**  Human-Falling-Detect-Tracks
+## Sources
+
+- **@GajuuzZ** Human-Falling-Detect-Tracks
  - https://github.com/GajuuzZ/Human-Falling-Detect-Tracks
-   - Real-Time Pose Detection
-   - Fall Detection
+ - Real-Time Pose Detection
+ - Fall Detection
