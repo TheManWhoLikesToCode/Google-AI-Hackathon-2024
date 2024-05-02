@@ -185,11 +185,6 @@ export default function Home() {
       <div className={styles.logoContainer}>
         <img src="/logo.svg" alt="Logo" className={styles.logoImage} />
       </div>
-      <div className={styles.header}>
-        <a href="/about" className={styles.aboutLink}>
-          About us
-        </a>
-      </div>
       <Head>
         <title>Demo Page</title>
         <link rel="icon" href="/favicon.ico" />
